@@ -99,7 +99,7 @@ pub async fn open_test_workspace(
         )
     });
 
-    let window = cx.open_offscreen_window(window_size, |window, cx| {
+    let window = cx.open_offscreen_window(window_size, 1.0, |window, cx| {
         cx.new(|cx| workspace::Workspace::new(None, project.clone(), app_state.clone(), window, cx))
     })?;
 

@@ -75,6 +75,8 @@ use std::{
 };
 
 const WINDOW_STATE_IVAR: &str = "windowState";
+#[cfg(any(test, feature = "test-support"))]
+const OFFSCREEN_SCALE_IVAR: &str = "offscreenScaleFactor";
 
 static mut WINDOW_CLASS: *const Class = ptr::null();
 #[cfg(any(test, feature = "test-support"))]
@@ -138,6 +140,12 @@ extern "C" fn constrain_offscreen_frame(
 ) -> NSRect {
     frame
 }
+
+#[cfg(any(test, feature = "test-support"))]
+extern "C" fn offscreen_backing_scale_factor(this: &Object, _sel: Sel) -> f64 {
+    unsafe { *this.get_ivar::<f64>(OFFSCREEN_SCALE_IVAR) }
+}
+
 #[ctor(unsafe)]
 unsafe fn build_classes() {
     unsafe {
@@ -146,6 +154,11 @@ unsafe fn build_classes() {
         #[cfg(any(test, feature = "test-support"))]
         {
             let mut decl = ClassDecl::new("GPUIOffscreenWindow", &*WINDOW_CLASS).unwrap();
+            decl.add_ivar::<f64>(OFFSCREEN_SCALE_IVAR);
+            decl.add_method(
+                sel!(backingScaleFactor),
+                offscreen_backing_scale_factor as extern "C" fn(&Object, Sel) -> f64,
+            );
             decl.add_method(
                 sel!(constrainFrameRect:toScreen:),
                 constrain_offscreen_frame as extern "C" fn(&Object, Sel, NSRect, id) -> NSRect,
@@ -907,7 +920,7 @@ impl MacWindow {
         WindowParams {
             bounds,
             #[cfg(any(test, feature = "test-support"))]
-            offscreen,
+            offscreen_scale_factor,
             titlebar,
             kind,
             is_movable,
@@ -961,12 +974,17 @@ impl MacWindow {
                 WindowKind::Normal => {
                     let window_class = WINDOW_CLASS;
                     #[cfg(any(test, feature = "test-support"))]
-                    let window_class = if offscreen {
+                    let window_class = if offscreen_scale_factor.is_some() {
                         OFFSCREEN_WINDOW_CLASS
                     } else {
                         window_class
                     };
-                    msg_send![window_class, alloc]
+                    let native_window: id = msg_send![window_class, alloc];
+                    #[cfg(any(test, feature = "test-support"))]
+                    if let Some(scale_factor) = offscreen_scale_factor {
+                        (*native_window).set_ivar(OFFSCREEN_SCALE_IVAR, f64::from(scale_factor));
+                    }
+                    native_window
                 }
                 // `AnchoredPopup` is rejected in `MacPlatform::open_window`, grouped here only
                 // for exhaustiveness.
@@ -2248,6 +2266,11 @@ impl rwh::HasDisplayHandle for MacWindow {
 
 fn get_scale_factor(native_window: id) -> f32 {
     let factor = unsafe {
+        #[cfg(any(test, feature = "test-support"))]
+        if msg_send![native_window, isKindOfClass: OFFSCREEN_WINDOW_CLASS] {
+            let scale_factor: f64 = msg_send![native_window, backingScaleFactor];
+            return scale_factor as f32;
+        }
         let screen: id = msg_send![native_window, screen];
         if screen.is_null() {
             return 2.0;

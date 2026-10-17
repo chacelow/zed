@@ -1876,10 +1876,10 @@ pub struct WindowOptions {
     /// - `Some(WindowBounds)`: Open a window with corresponding state and its restore size.
     pub window_bounds: Option<WindowBounds>,
 
-    /// Preserve offscreen visual-test bounds instead of constraining them to a display.
-    /// Normal application windows leave this disabled, including in test-support builds.
+    /// Offscreen visual-test backing scale, independent of real displays.
+    /// `None` preserves normal application window sizing and scale behavior.
     #[cfg(any(test, feature = "test-support"))]
-    pub offscreen: bool,
+    pub offscreen_scale_factor: Option<f32>,
 
     /// The titlebar configuration of the window
     pub titlebar: Option<TitlebarOptions>,
@@ -1960,7 +1960,7 @@ pub struct WindowParams {
     pub bounds: Bounds<Pixels>,
 
     #[cfg(any(test, feature = "test-support"))]
-    pub offscreen: bool,
+    pub offscreen_scale_factor: Option<f32>,
 
     /// The titlebar configuration of the window
     #[cfg_attr(feature = "wayland", allow(dead_code))]
@@ -2054,7 +2054,7 @@ impl Default for WindowOptions {
         Self {
             window_bounds: None,
             #[cfg(any(test, feature = "test-support"))]
-            offscreen: false,
+            offscreen_scale_factor: None,
             titlebar: Some(TitlebarOptions {
                 title: Default::default(),
                 appears_transparent: Default::default(),

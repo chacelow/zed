@@ -1376,7 +1376,7 @@ impl Window {
         let WindowOptions {
             window_bounds,
             #[cfg(any(test, feature = "test-support"))]
-            offscreen,
+            offscreen_scale_factor,
             titlebar,
             focus,
             show,
@@ -1410,7 +1410,7 @@ impl Window {
             WindowParams {
                 bounds: window_bounds.get_bounds(),
                 #[cfg(any(test, feature = "test-support"))]
-                offscreen,
+                offscreen_scale_factor,
                 titlebar,
                 kind,
                 is_movable,

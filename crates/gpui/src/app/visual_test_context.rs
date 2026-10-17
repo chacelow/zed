@@ -91,10 +91,12 @@ impl VisualTestAppContext {
     ///
     /// # Arguments
     /// * `size` - The size of the window to create
+    /// * `scale_factor` - The explicit macOS backing scale, independent of displays
     /// * `build_root` - A closure that builds the root view for the window
     pub fn open_offscreen_window<V: Render + 'static>(
         &mut self,
         size: Size<Pixels>,
+        scale_factor: f32,
         build_root: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
     ) -> Result<WindowHandle<V>> {
         use crate::{point, px};
@@ -110,7 +112,7 @@ impl VisualTestAppContext {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 focus: false,
                 show: true,
-                offscreen: true,
+                offscreen_scale_factor: Some(scale_factor),
                 ..Default::default()
             },
             build_root,
@@ -123,7 +125,7 @@ impl VisualTestAppContext {
         build_root: impl FnOnce(&mut Window, &mut App) -> Entity<V>,
     ) -> Result<WindowHandle<V>> {
         use crate::{px, size};
-        self.open_offscreen_window(size(px(1280.0), px(800.0)), build_root)
+        self.open_offscreen_window(size(px(1280.0), px(800.0)), 1.0, build_root)
     }
 
     /// Returns whether screen capture is supported on this platform.
