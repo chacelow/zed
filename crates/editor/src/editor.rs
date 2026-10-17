@@ -10575,6 +10575,7 @@ impl Editor {
                     self,
                     &MouseMoveEvent {
                         position: window.mouse_position(),
+                        delta: point(px(0.), px(0.)),
                         pressed_button: None,
                         modifiers: window.modifiers(),
                     },

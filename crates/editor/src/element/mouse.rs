@@ -1256,6 +1256,7 @@ mod tests {
                 editor,
                 &MouseMoveEvent {
                     position: mouse_drag_position,
+                    delta: point(px(0.), px(0.)),
                     modifiers: Modifiers::none(),
                     pressed_button: Some(MouseButton::Left),
                 },

@@ -810,6 +810,7 @@ impl VisualTestContext {
     ) {
         self.simulate_event(MouseMoveEvent {
             position,
+            delta: Default::default(),
             modifiers,
             pressed_button: button.into(),
         })

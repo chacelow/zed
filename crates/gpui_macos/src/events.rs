@@ -305,6 +305,7 @@ pub(crate) unsafe fn platform_input_from_native(
                             px(native_event.locationInWindow().x as f32),
                             window_height - px(native_event.locationInWindow().y as f32),
                         ),
+                        delta: point(px(0.), px(0.)),
                         modifiers: read_modifiers(native_event),
                     })
                 })
@@ -315,6 +316,7 @@ pub(crate) unsafe fn platform_input_from_native(
                         px(native_event.locationInWindow().x as f32),
                         window_height - px(native_event.locationInWindow().y as f32),
                     ),
+                    delta: point(px(0.), px(0.)),
                     pressed_button: None,
                     modifiers: read_modifiers(native_event),
                 })

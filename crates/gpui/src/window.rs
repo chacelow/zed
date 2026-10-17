@@ -5388,6 +5388,7 @@ impl Window {
                     }
                     PlatformInput::MouseMove(MouseMoveEvent {
                         position,
+                        delta: point(px(0.), px(0.)),
                         pressed_button: Some(MouseButton::Left),
                         modifiers: Modifiers::default(),
                     })
@@ -5396,6 +5397,7 @@ impl Window {
                     self.mouse_position = position;
                     PlatformInput::MouseMove(MouseMoveEvent {
                         position,
+                        delta: point(px(0.), px(0.)),
                         pressed_button: Some(MouseButton::Left),
                         modifiers: Modifiers::default(),
                     })
@@ -6764,6 +6766,7 @@ impl Window {
     pub fn simulate_mouse_move(&mut self, position: Point<Pixels>, cx: &mut App) {
         let event = PlatformInput::MouseMove(MouseMoveEvent {
             position,
+            delta: point(px(0.), px(0.)),
             modifiers: self.modifiers,
             pressed_button: None,
         });
@@ -7767,6 +7770,7 @@ mod tests {
                 window.dispatch_event(
                     MouseMoveEvent {
                         position: point(px(20.), px(20.)),
+                        delta: point(px(0.), px(0.)),
                         pressed_button: Some(MouseButton::Left),
                         modifiers: Default::default(),
                     }
@@ -7795,6 +7799,7 @@ mod tests {
             window.dispatch_event(
                 MouseMoveEvent {
                     position: outside_position,
+                    delta: point(px(0.), px(0.)),
                     pressed_button: Some(MouseButton::Left),
                     modifiers: Default::default(),
                 }
@@ -7923,6 +7928,7 @@ mod tests {
             window.dispatch_event(
                 MouseMoveEvent {
                     position: outside_position,
+                    delta: point(px(0.), px(0.)),
                     pressed_button: Some(MouseButton::Left),
                     modifiers: Default::default(),
                 }
@@ -7959,6 +7965,7 @@ mod tests {
         let update_result = cx.update_window(removed.window, |_, window, cx| {
             window.dispatch_event(
                 MouseMoveEvent {
+                    delta: point(px(0.), px(0.)),
                     position: outside_position,
                     pressed_button: Some(MouseButton::Left),
                     modifiers: Default::default(),
@@ -7982,6 +7989,7 @@ mod tests {
                 window.dispatch_event(
                     MouseMoveEvent {
                         position: point(px(x_position), px(20.)),
+                        delta: point(px(0.), px(0.)),
                         pressed_button: Some(MouseButton::Left),
                         modifiers: Default::default(),
                     }

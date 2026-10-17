@@ -2128,6 +2128,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                     // a MouseMove to establish hover at the entry position.
                     window.handle_input(PlatformInput::MouseMove(MouseMoveEvent {
                         position,
+                        delta: point(px(0.), px(0.)),
                         pressed_button: None,
                         modifiers,
                     }));
@@ -2196,6 +2197,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                     }
                     let input = PlatformInput::MouseMove(MouseMoveEvent {
                         position: state.mouse_location.unwrap(),
+                        delta: point(px(0.), px(0.)),
                         pressed_button: state.button_pressed,
                         modifiers: state.modifiers,
                     });

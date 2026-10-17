@@ -3853,6 +3853,7 @@ mod tests {
         let region = terminal.last_content.terminal_bounds.bounds;
         let drag_event = MouseMoveEvent {
             position,
+            delta: point(px(0.), px(0.)),
             pressed_button: Some(MouseButton::Left),
             modifiers: Modifiers::none(),
         };
@@ -3951,6 +3952,7 @@ mod tests {
             terminal.mouse_drag(
                 &MouseMoveEvent {
                     position: point(px(90.0), px(10.0)),
+                    delta: point(px(0.), px(0.)),
                     pressed_button: Some(MouseButton::Left),
                     modifiers: shift,
                 },
@@ -4736,6 +4738,7 @@ mod tests {
             let terminal_bounds = terminal.last_content.terminal_bounds.bounds;
             let drag_event = MouseMoveEvent {
                 position,
+                delta: point(px(0.), px(0.)),
                 pressed_button: Some(MouseButton::Left),
                 modifiers: Modifiers::secondary_key(),
             };
@@ -4820,6 +4823,7 @@ mod tests {
             terminal.mouse_move(
                 &MouseMoveEvent {
                     position: up_position,
+                    delta: point(px(0.), px(0.)),
                     pressed_button: Some(MouseButton::Left),
                     modifiers: Modifiers::secondary_key(),
                 },

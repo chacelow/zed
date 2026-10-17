@@ -38,8 +38,8 @@ pub(crate) struct WindowsWindow(pub Rc<WindowsWindowInner>);
 pub(crate) struct RelativePointer {
     /// Physical screen point the cursor is held at.
     pub anchor: POINT,
-    /// Window position reported to GPUI, advanced by relative motion.
-    pub position: Point<Pixels>,
+    /// Window position held for GPUI hit testing during the drag.
+    pub anchor_position: Point<Pixels>,
 }
 
 impl std::ops::Deref for WindowsWindow {
@@ -969,8 +969,8 @@ impl PlatformWindow for WindowsWindow {
         if !unsafe { ScreenToClient(self.0.hwnd, &mut client) }.as_bool() {
             return false;
         }
-        let position = logical_point(client.x as f32, client.y as f32, self.state.scale_factor.get());
-        self.state.relative_pointer.set(Some(RelativePointer { anchor, position }));
+        let anchor_position = logical_point(client.x as f32, client.y as f32, self.state.scale_factor.get());
+        self.state.relative_pointer.set(Some(RelativePointer { anchor, anchor_position }));
         self.state.cursor_visible.store(false, std::sync::atomic::Ordering::Relaxed);
         unsafe { SetCursor(None) };
         true

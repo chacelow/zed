@@ -6788,6 +6788,7 @@ mod tests {
         cx.run_until_parked();
         cx.simulate_event(MouseMoveEvent {
             position: tab_c_bounds.center(),
+            delta: point(px(0.), px(0.)),
             pressed_button: Some(MouseButton::Left),
             modifiers: Modifiers::default(),
         });
@@ -6863,6 +6864,7 @@ mod tests {
         cx.run_until_parked();
         cx.simulate_event(MouseMoveEvent {
             position: tab_c_bounds.center(),
+            delta: point(px(0.), px(0.)),
             pressed_button: Some(MouseButton::Left),
             modifiers: Modifiers::default(),
         });
@@ -6915,6 +6917,7 @@ mod tests {
         cx.run_until_parked();
         cx.simulate_event(MouseMoveEvent {
             position: tab_c_bounds.center(),
+            delta: point(px(0.), px(0.)),
             pressed_button: Some(MouseButton::Left),
             modifiers: Modifiers::default(),
         });
@@ -6982,6 +6985,7 @@ mod tests {
         cx.run_until_parked();
         cx.simulate_event(MouseMoveEvent {
             position: tab_e_bounds.center(),
+            delta: point(px(0.), px(0.)),
             pressed_button: Some(MouseButton::Left),
             modifiers: Modifiers::default(),
         });

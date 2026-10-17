@@ -369,6 +369,7 @@ impl WebWindowInner {
             TouchDrag::Select => {
                 self.dispatch_input(PlatformInput::MouseMove(MouseMoveEvent {
                     position,
+                    delta: point(px(0.), px(0.)),
                     pressed_button: self.pressed_button.get(),
                     modifiers,
                 }));
@@ -581,6 +582,7 @@ impl WebWindowInner {
 
             this.dispatch_input(PlatformInput::MouseMove(MouseMoveEvent {
                 position,
+                delta: point(px(0.), px(0.)),
                 pressed_button: current_pressed,
                 modifiers,
             }));

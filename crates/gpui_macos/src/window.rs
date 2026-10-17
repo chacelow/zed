@@ -669,7 +669,6 @@ struct MacWindowState {
     accesskit_adapter: Option<accesskit_macos::SubclassingAdapter>,
     // The parent window if this window is a sheet (Dialog kind)
     sheet_parent: Option<id>,
-    // Accumulated window-space position while the cursor is pinned for a relative drag.
     relative_pointer: Option<Point<Pixels>>,
 }
 
@@ -2673,17 +2672,16 @@ extern "C" fn handle_view_event(this: &Object, _: Sel, native_event: id) {
         _ => {}
     }
     let mut event = unsafe { platform_input_from_native(native_event, Some(window_height)) };
-    if let Some(relative) = lock.relative_pointer.as_mut() {
-        // The cursor is pinned, so the absolute location is frozen: advance a
-        // virtual position by the event's relative motion instead.
-        match event.as_mut() {
-            Some(PlatformInput::MouseMove(moved)) => {
-                relative.x += px(unsafe { native_event.deltaX() } as f32);
-                relative.y += px(unsafe { native_event.deltaY() } as f32);
-                moved.position = *relative;
-            }
-            Some(PlatformInput::MouseUp(up)) => up.position = *relative,
-            _ => {}
+    if let Some(position) = lock.relative_pointer {
+        if let Some(PlatformInput::MouseMove(moved)) = event.as_mut() {
+            moved.delta = point(
+                px(unsafe { native_event.deltaX() } as f32),
+                px(-(unsafe { native_event.deltaY() } as f32)),
+            );
+            moved.position = position;
+        }
+        if let Some(PlatformInput::MouseUp(up)) = event.as_mut() {
+            up.position = position;
         }
     }
 

@@ -394,24 +394,21 @@ impl WindowsWindowInner {
         unsafe { SetCursor(self.state.current_cursor.get()) };
     }
 
-    /// While relative, the cursor is held at its anchor: each move contributes
-    /// its offset from the anchor and is then warped back, as Live does.
-    fn relative_position(&self, x: f32, y: f32) -> Option<Point<Pixels>> {
-        let mut relative = self.state.relative_pointer.get()?;
+    fn relative_position(&self, x: f32, y: f32) -> Option<(Point<Pixels>, Point<Pixels>)> {
+        let relative = self.state.relative_pointer.get()?;
         let mut screen = POINT { x: x as i32, y: y as i32 };
         if !unsafe { ClientToScreen(self.hwnd, &mut screen) }.as_bool() {
-            return Some(relative.position);
+            return Some((relative.anchor_position, point(px(0.), px(0.))));
         }
-        let dx = screen.x - relative.anchor.x;
-        let dy = screen.y - relative.anchor.y;
-        if dx != 0 || dy != 0 {
-            let scale = self.state.scale_factor.get();
-            relative.position.x += px(dx as f32 / scale);
-            relative.position.y += px(dy as f32 / scale);
-            self.state.relative_pointer.set(Some(relative));
+        let scale = self.state.scale_factor.get();
+        let delta = point(
+            px((screen.x - relative.anchor.x) as f32 / scale),
+            px((screen.y - relative.anchor.y) as f32 / scale),
+        );
+        if delta.x != px(0.) || delta.y != px(0.) {
             unsafe { SetCursorPos(relative.anchor.x, relative.anchor.y) }.log_err();
         }
-        Some(relative.position)
+        Some((relative.anchor_position, delta))
     }
 
     fn handle_mouse_move_msg(&self, handle: HWND, lparam: LPARAM, wparam: WPARAM) -> Option<isize> {
@@ -439,10 +436,12 @@ impl WindowsWindowInner {
         };
         let x = lparam.signed_loword() as f32;
         let y = lparam.signed_hiword() as f32;
+        let (position, delta) = self
+            .relative_position(x, y)
+            .unwrap_or_else(|| (logical_point(x, y, scale_factor), point(px(0.), px(0.))));
         let input = PlatformInput::MouseMove(MouseMoveEvent {
-            position: self
-                .relative_position(x, y)
-                .unwrap_or_else(|| logical_point(x, y, scale_factor)),
+            position,
+            delta,
             pressed_button,
             modifiers: current_modifiers(),
         });
@@ -588,7 +587,7 @@ impl WindowsWindowInner {
                 .state
                 .relative_pointer
                 .get()
-                .map(|relative| relative.position)
+                .map(|relative| relative.anchor_position)
                 .unwrap_or_else(|| logical_point(x, y, scale_factor)),
             modifiers: current_modifiers(),
             click_count,
@@ -1103,6 +1102,7 @@ impl WindowsWindowInner {
         unsafe { ScreenToClient(handle, &mut cursor_point).ok().log_err() };
         let input = PlatformInput::MouseMove(MouseMoveEvent {
             position: logical_point(cursor_point.x as f32, cursor_point.y as f32, scale_factor),
+            delta: point(px(0.), px(0.)),
             pressed_button: None,
             modifiers: current_modifiers(),
         });

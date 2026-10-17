@@ -485,10 +485,10 @@ pub enum NavigationDirection {
 pub struct MouseMoveEvent {
     /// The position of the mouse on the window.
     pub position: Point<Pixels>,
-
+    /// Movement since the previous mouse move, or zero outside relative mode.
+    pub delta: Point<Pixels>,
     /// The mouse button that was pressed, if any.
     pub pressed_button: Option<MouseButton>,
-
     /// The modifiers that were held down when the mouse was moved.
     pub modifiers: Modifiers,
 }
