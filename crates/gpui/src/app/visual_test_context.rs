@@ -110,6 +110,7 @@ impl VisualTestAppContext {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 focus: false,
                 show: true,
+                offscreen: true,
                 ..Default::default()
             },
             build_root,

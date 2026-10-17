@@ -1375,6 +1375,8 @@ impl Window {
     ) -> Result<Self> {
         let WindowOptions {
             window_bounds,
+            #[cfg(any(test, feature = "test-support"))]
+            offscreen,
             titlebar,
             focus,
             show,
@@ -1407,6 +1409,8 @@ impl Window {
             handle,
             WindowParams {
                 bounds: window_bounds.get_bounds(),
+                #[cfg(any(test, feature = "test-support"))]
+                offscreen,
                 titlebar,
                 kind,
                 is_movable,

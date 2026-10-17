@@ -1876,6 +1876,11 @@ pub struct WindowOptions {
     /// - `Some(WindowBounds)`: Open a window with corresponding state and its restore size.
     pub window_bounds: Option<WindowBounds>,
 
+    /// Preserve offscreen visual-test bounds instead of constraining them to a display.
+    /// Normal application windows leave this disabled, including in test-support builds.
+    #[cfg(any(test, feature = "test-support"))]
+    pub offscreen: bool,
+
     /// The titlebar configuration of the window
     pub titlebar: Option<TitlebarOptions>,
 
@@ -1953,6 +1958,9 @@ pub struct WindowOptions {
 #[allow(missing_docs)]
 pub struct WindowParams {
     pub bounds: Bounds<Pixels>,
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub offscreen: bool,
 
     /// The titlebar configuration of the window
     #[cfg_attr(feature = "wayland", allow(dead_code))]
@@ -2045,6 +2053,8 @@ impl Default for WindowOptions {
     fn default() -> Self {
         Self {
             window_bounds: None,
+            #[cfg(any(test, feature = "test-support"))]
+            offscreen: false,
             titlebar: Some(TitlebarOptions {
                 title: Default::default(),
                 appears_transparent: Default::default(),

@@ -77,6 +77,8 @@ use std::{
 const WINDOW_STATE_IVAR: &str = "windowState";
 
 static mut WINDOW_CLASS: *const Class = ptr::null();
+#[cfg(any(test, feature = "test-support"))]
+static mut OFFSCREEN_WINDOW_CLASS: *const Class = ptr::null();
 static mut PANEL_CLASS: *const Class = ptr::null();
 static mut VIEW_CLASS: *const Class = ptr::null();
 static mut BLURRED_VIEW_CLASS: *const Class = ptr::null();
@@ -126,11 +128,30 @@ unsafe extern "C" {
     #[allow(non_upper_case_globals)]
     static NSDraggingImageComponentIconKey: id;
 }
+
+#[cfg(any(test, feature = "test-support"))]
+extern "C" fn constrain_offscreen_frame(
+    _this: &Object,
+    _sel: Sel,
+    frame: NSRect,
+    _screen: id,
+) -> NSRect {
+    frame
+}
 #[ctor(unsafe)]
 unsafe fn build_classes() {
     unsafe {
         WINDOW_CLASS = build_window_class("GPUIWindow", class!(NSWindow));
         PANEL_CLASS = build_window_class("GPUIPanel", class!(NSPanel));
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            let mut decl = ClassDecl::new("GPUIOffscreenWindow", &*WINDOW_CLASS).unwrap();
+            decl.add_method(
+                sel!(constrainFrameRect:toScreen:),
+                constrain_offscreen_frame as extern "C" fn(&Object, Sel, NSRect, id) -> NSRect,
+            );
+            OFFSCREEN_WINDOW_CLASS = decl.register();
+        }
         VIEW_CLASS = {
             let mut decl = ClassDecl::new("GPUIView", class!(NSView)).unwrap();
             decl.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR);
@@ -885,6 +906,8 @@ impl MacWindow {
         handle: AnyWindowHandle,
         WindowParams {
             bounds,
+            #[cfg(any(test, feature = "test-support"))]
+            offscreen,
             titlebar,
             kind,
             is_movable,
@@ -936,7 +959,14 @@ impl MacWindow {
 
             let native_window: id = match kind {
                 WindowKind::Normal => {
-                    msg_send![WINDOW_CLASS, alloc]
+                    let window_class = WINDOW_CLASS;
+                    #[cfg(any(test, feature = "test-support"))]
+                    let window_class = if offscreen {
+                        OFFSCREEN_WINDOW_CLASS
+                    } else {
+                        window_class
+                    };
+                    msg_send![window_class, alloc]
                 }
                 // `AnchoredPopup` is rejected in `MacPlatform::open_window`, grouped here only
                 // for exhaustiveness.
