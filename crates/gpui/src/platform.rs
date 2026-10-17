@@ -848,6 +848,7 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     /// Requests that the operating system draw attention to this window.
     fn request_attention(&self) {}
     fn is_active(&self) -> bool;
+    fn resume_generation(&self) -> u64 { 0 }
     fn is_hovered(&self) -> bool;
     fn background_appearance(&self) -> WindowBackgroundAppearance;
     fn set_title(&mut self, title: &str);

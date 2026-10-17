@@ -1176,6 +1176,8 @@ pub struct Window {
     pub(crate) next_tooltip_id: TooltipId,
     pub(crate) tooltip_bounds: Option<TooltipBounds>,
     pub(crate) next_frame_callbacks: Rc<RefCell<Vec<FrameCallback>>>,
+    before_present: Option<Box<dyn FnMut(&mut Window, &mut App) -> bool>>,
+    presentation_deferred: bool,
     pub(crate) dirty_views: FxHashSet<EntityId>,
     focus_listeners: SubscriberSet<(), AnyWindowFocusListener>,
     pub(crate) focus_lost_listeners: SubscriberSet<(), AnyObserver>,
@@ -1646,6 +1648,16 @@ impl Window {
                         .log_err();
                 }
 
+                let can_present = handle.update(&mut cx, |_, window, cx| {
+                    window.prepare_presentation(cx)
+                }).log_err().unwrap_or(false);
+                if !can_present {
+                    // The owner wakes the frame source after its async commit.
+                    // Do not spin on dirty views while JavaScript is outstanding.
+                    deferred_force_render |= force_render;
+                    return;
+                }
+
                 // Keep presenting if input was recently arriving at a high rate (>= 60fps).
                 // Once high-rate input is detected, we sustain presentation for 1 second
                 // to prevent display underclocking during active input.
@@ -1865,6 +1877,8 @@ impl Window {
             rendered_frame: Frame::new(DispatchTree::new(cx.keymap.clone(), cx.actions.clone())),
             next_frame: Frame::new(DispatchTree::new(cx.keymap.clone(), cx.actions.clone())),
             next_frame_callbacks,
+            before_present: None,
+            presentation_deferred: false,
             next_hitbox_id: HitboxId(0),
             next_tooltip_id: TooltipId::default(),
             tooltip_bounds: None,
@@ -2401,6 +2415,38 @@ impl Window {
     /// await points in async code.
     pub fn to_async(&self, cx: &App) -> AsyncWindowContext {
         AsyncWindowContext::new_context(cx.to_async(), self.handle)
+    }
+
+    /// Install a nonblocking gate before a platform frame is drawn or presented.
+    /// Returning false retains frame demand without presenting stale content.
+    /// The owner must call `resume_presentation` when its async work completes.
+    pub fn on_before_present(
+        &mut self,
+        callback: Option<Box<dyn FnMut(&mut Window, &mut App) -> bool>>,
+    ) {
+        self.before_present = callback;
+        self.resume_presentation();
+    }
+
+    fn prepare_presentation(&mut self, cx: &mut App) -> bool {
+        let mut callback = self.before_present.take();
+        let allow = callback.as_mut().map(|callback| callback(self, cx)).unwrap_or(true);
+        self.before_present = callback;
+        self.presentation_deferred = !allow;
+        allow
+    }
+
+    /// Release deferred presentation and request a fresh draw, not a cached scene.
+    pub fn resume_presentation(&mut self) {
+        self.presentation_deferred = false;
+        self.refresh();
+        self.platform_window.schedule_frame();
+        self.invalidator.wake_platform();
+    }
+
+    /// Native show/restore generation, sampled before presentation by async hosts.
+    pub fn resume_generation(&self) -> u64 {
+        self.platform_window.resume_generation()
     }
 
     /// Schedule the given closure to be run directly after the current frame is rendered.
@@ -3088,6 +3134,7 @@ impl Window {
 
     #[profiling::function]
     fn present(&mut self) {
+        if self.presentation_deferred { return; }
         #[cfg(feature = "profiler")]
         let _foreground_turn = profiler::journal::foreground_turn();
         #[cfg(feature = "profiler")]
@@ -7347,6 +7394,42 @@ mod tests {
             test_window.frame_wake_count() > baseline,
             "scheduling a next-frame callback in an idle window must wake the frame source"
         );
+    }
+
+    #[gpui::test]
+    fn async_pre_present_gate_draws_latest_commit_and_removal_releases(cx: &mut TestAppContext) {
+        cx.update(|app| app.mode = crate::GpuiMode::Production);
+        struct VersionView { value: u32, rendered: Rc<Cell<u32>> }
+        impl Render for VersionView {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                self.rendered.set(self.value);
+                div()
+            }
+        }
+        let rendered = Rc::new(Cell::new(0));
+        let window = cx.add_window({
+            let rendered = rendered.clone();
+            move |_, _| VersionView { value: 1, rendered }
+        });
+        let platform = cx.test_window(window.into());
+        platform.simulate_frame_request(RequestFrameOptions::default());
+        assert_eq!(rendered.get(), 1);
+        window.update(cx, |_, window, _| {
+            window.on_before_present(Some(Box::new(|_, _| false)));
+        }).unwrap();
+        platform.simulate_frame_request(RequestFrameOptions::default());
+        window.update(cx, |view, window, cx| {
+            assert!(window.presentation_deferred);
+            view.value = 2;
+            cx.notify();
+        }).unwrap();
+        assert_eq!(rendered.get(), 1, "retained commit must not draw before the gate releases");
+        platform.simulate_frame_request(RequestFrameOptions::default());
+        assert_eq!(rendered.get(), 1, "no stale draw while the JS commit is outstanding");
+        window.update(cx, |_, window, _| window.on_before_present(None)).unwrap();
+        platform.simulate_frame_request(RequestFrameOptions::default());
+        assert_eq!(rendered.get(), 2, "first released frame uses the latest retained commit");
+        window.update(cx, |_, window, _| assert!(!window.presentation_deferred)).unwrap();
     }
 
     /// A frame request that arrives while next-frame callbacks are pending

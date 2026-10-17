@@ -112,6 +112,16 @@ fn get_adapter(
     ID3D11DeviceContext,
     D3D_FEATURE_LEVEL,
 )> {
+    if std::env::var("GPUIX_FORCE_WARP").as_deref() == Ok("1") {
+        let adapter: IDXGIAdapter1 = unsafe { dxgi_factory.EnumWarpAdapter()? };
+        let mut context = None;
+        let mut feature_level = D3D_FEATURE_LEVEL::default();
+        let device = get_device(&adapter, Some(&mut context), Some(&mut feature_level), debug_layer_available)
+            .context("Creating explicitly requested WARP device")?;
+        log::info!("Using WARP software adapter (GPUIX_FORCE_WARP=1)");
+        return Ok((adapter, device, context.context("WARP device context is unavailable")?, feature_level));
+    }
+
     for adapter_index in 0.. {
         let adapter: IDXGIAdapter1 = unsafe { dxgi_factory.EnumAdapters(adapter_index)?.cast()? };
         if let Ok(desc) = unsafe { adapter.GetDesc1() } {

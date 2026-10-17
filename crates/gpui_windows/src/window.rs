@@ -51,6 +51,8 @@ pub struct WindowsWindowState {
     pub appearance: Cell<WindowAppearance>,
     pub background_appearance: Cell<WindowBackgroundAppearance>,
     pub scale_factor: Cell<f32>,
+    pub offscreen_scale_factor: Option<f32>,
+    resume: Cell<ResumeState>,
     pub restore_from_minimized: Cell<Option<Box<dyn FnMut(RequestFrameOptions)>>>,
 
     pub callbacks: Callbacks,
@@ -107,7 +109,40 @@ pub(crate) struct WindowsWindowInner {
     pub(crate) parent_hwnd: Option<HWND>,
 }
 
+#[derive(Clone, Copy, Default)]
+struct ResumeState {
+    visible: bool,
+    minimized: bool,
+    generation: u64,
+}
+
+impl ResumeState {
+    fn show(&mut self, visible: bool) {
+        let was_visible = self.visible && !self.minimized;
+        self.visible = visible;
+        if !was_visible && self.visible && !self.minimized { self.generation += 1; }
+    }
+
+    fn minimize(&mut self, minimized: bool) {
+        let was_visible = self.visible && !self.minimized;
+        self.minimized = minimized;
+        if !was_visible && self.visible && !self.minimized { self.generation += 1; }
+    }
+}
+
 impl WindowsWindowState {
+    pub(crate) fn note_visibility(&self, visible: bool) {
+        let mut state = self.resume.get();
+        state.show(visible);
+        self.resume.set(state);
+    }
+
+    pub(crate) fn note_minimized(&self, minimized: bool) {
+        let mut state = self.resume.get();
+        state.minimize(minimized);
+        self.resume.set(state);
+    }
+
     fn new(
         hwnd: HWND,
         directx_devices: &DirectXDevices,
@@ -120,11 +155,12 @@ impl WindowsWindowState {
         disable_direct_composition: bool,
         invalidate_devices: Arc<AtomicBool>,
         draw_coordinator: Rc<DrawCoordinator>,
+        offscreen_scale_factor: Option<f32>,
     ) -> Result<Self> {
-        let scale_factor = {
+        let scale_factor = offscreen_scale_factor.unwrap_or_else(|| {
             let monitor_dpi = unsafe { GetDpiForWindow(hwnd) } as f32;
             monitor_dpi / USER_DEFAULT_SCREEN_DPI as f32
-        };
+        });
         let origin = logical_point(window_params.x as f32, window_params.y as f32, scale_factor);
         let logical_size = {
             let physical_size = size(
@@ -163,6 +199,8 @@ impl WindowsWindowState {
             appearance: Cell::new(appearance),
             background_appearance: Cell::new(WindowBackgroundAppearance::Opaque),
             scale_factor: Cell::new(scale_factor),
+            offscreen_scale_factor,
+            resume: Cell::new(ResumeState::default()),
             restore_from_minimized: Cell::new(restore_from_minimized),
             min_size,
             callbacks,
@@ -262,6 +300,7 @@ impl WindowsWindowInner {
             context.disable_direct_composition,
             context.invalidate_devices.clone(),
             context.draw_coordinator.clone(),
+            context.offscreen_scale_factor,
         )?;
 
         Ok(Rc::new(Self {
@@ -411,6 +450,7 @@ struct WindowCreateContext {
     invalidate_devices: Arc<AtomicBool>,
     draw_coordinator: Rc<DrawCoordinator>,
     parent_hwnd: Option<HWND>,
+    offscreen_scale_factor: Option<f32>,
 }
 
 impl WindowsWindow {
@@ -424,6 +464,10 @@ impl WindowsWindow {
         if let WindowKind::AnchoredPopup(_) = params.kind {
             return Err(popup::PopupNotSupportedError.into());
         }
+        #[cfg(any(test, feature = "test-support"))]
+        let offscreen_scale_factor = params.offscreen_scale_factor;
+        #[cfg(not(any(test, feature = "test-support")))]
+        let offscreen_scale_factor = None;
 
         let WindowCreationInfo {
             icon,
@@ -524,6 +568,7 @@ impl WindowsWindow {
             invalidate_devices,
             draw_coordinator,
             parent_hwnd,
+            offscreen_scale_factor,
         };
         let creation_result = unsafe {
             CreateWindowExW(
@@ -552,8 +597,31 @@ impl WindowsWindow {
         set_non_rude_hwnd(hwnd, true);
         configure_dwm_dark_mode(hwnd, appearance);
         this.state.border_offset.update(hwnd)?;
-        let placement =
-            retrieve_window_placement(hwnd, display, params.bounds, &this.state.border_offset)?;
+        let placement = retrieve_window_placement(
+            hwnd, display, params.bounds, &this.state.border_offset, offscreen_scale_factor,
+        )?;
+        if let Some(scale) = offscreen_scale_factor {
+            // SetWindowPlacement may move wholly offscreen windows back onscreen.
+            // SetWindowPos preserves the test's requested physical client extent.
+            let rect = placement.rcNormalPosition;
+            let mut flags = SWP_NOACTIVATE | SWP_NOZORDER;
+            if params.show { flags |= SWP_SHOWWINDOW; }
+            unsafe {
+                SetWindowPos(hwnd, None, rect.left, rect.top,
+                    rect.right - rect.left, rect.bottom - rect.top,
+                    flags)?;
+            }
+            this.state.origin.set(params.bounds.origin);
+            this.state.logical_size.set(params.bounds.size);
+            this.state.renderer.borrow_mut().resize(params.bounds.size.to_device_pixels(scale))?;
+            if !params.show {
+                this.state.initial_placement.set(Some(WindowOpenStatus {
+                    placement,
+                    state: WindowOpenState::Windowed,
+                }));
+            }
+            return Ok(Self(this));
+        }
         if params.show {
             let mut placement = placement;
             if !params.focus {
@@ -850,6 +918,10 @@ impl PlatformWindow for WindowsWindow {
 
     fn is_active(&self) -> bool {
         self.0.hwnd == unsafe { GetActiveWindow() }
+    }
+
+    fn resume_generation(&self) -> u64 {
+        self.state.resume.get().generation
     }
 
     fn is_hovered(&self) -> bool {
@@ -1522,6 +1594,7 @@ fn retrieve_window_placement(
     display: WindowsDisplay,
     initial_bounds: Bounds<Pixels>,
     border_offset: &WindowBorderOffset,
+    offscreen_scale_factor: Option<f32>,
 ) -> Result<WINDOWPLACEMENT> {
     let mut placement = WINDOWPLACEMENT {
         length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
@@ -1529,7 +1602,7 @@ fn retrieve_window_placement(
     };
     unsafe { GetWindowPlacement(hwnd, &mut placement)? };
     // the bounds may be not inside the display
-    let bounds = if display.check_given_bounds(initial_bounds) {
+    let bounds = if offscreen_scale_factor.is_some() || display.check_given_bounds(initial_bounds) {
         initial_bounds
     } else {
         display.default_bounds()
@@ -1541,9 +1614,43 @@ fn retrieve_window_placement(
     // monitor Windows picked by default, which can have a different DPI than `display`
     // and would otherwise throw off the physical position (e.g. leaving the window
     // partially off-screen when moved to a monitor with a different scale factor).
-    let bounds = bounds.to_device_pixels(display.scale_factor());
+    let bounds = bounds.to_device_pixels(offscreen_scale_factor.unwrap_or_else(|| display.scale_factor()));
     placement.rcNormalPosition = calculate_window_rect(bounds, border_offset);
     Ok(placement)
+}
+
+#[cfg(test)]
+mod windows_resume_tests {
+    use super::ResumeState;
+
+    #[test]
+    fn native_resume_generation_coalesces_duplicate_show_and_restore() {
+        let mut state = ResumeState::default();
+        state.show(true);
+        let shown = state.generation;
+        state.show(true);
+        assert_eq!(state.generation, shown);
+        state.minimize(true);
+        state.minimize(true);
+        assert_eq!(state.generation, shown);
+        state.minimize(false);
+        assert_eq!(state.generation, shown + 1);
+        state.minimize(false);
+        state.show(true);
+        assert_eq!(state.generation, shown + 1);
+        state.show(false);
+        state.show(true);
+        assert_eq!(state.generation, shown + 2);
+        state.minimize(true);
+        state.show(false);
+        state.minimize(false);
+        assert_eq!(state.generation, shown + 2);
+        state.show(true);
+        assert_eq!(state.generation, shown + 3);
+        state.show(true);
+        state.minimize(false);
+        assert_eq!(state.generation, shown + 3);
+    }
 }
 
 fn dwm_set_window_composition_attribute(hwnd: HWND, backdrop_type: u32) {
