@@ -34,6 +34,14 @@ use gpui::*;
 
 pub(crate) struct WindowsWindow(pub Rc<WindowsWindowInner>);
 
+#[derive(Clone, Copy)]
+pub(crate) struct RelativePointer {
+    /// Physical screen point the cursor is held at.
+    pub anchor: POINT,
+    /// Window position reported to GPUI, advanced by relative motion.
+    pub position: Point<Pixels>,
+}
+
 impl std::ops::Deref for WindowsWindow {
     type Target = WindowsWindowInner;
 
@@ -79,6 +87,8 @@ pub struct WindowsWindowState {
     /// Shared with [`WindowsPlatformState::cursor_visible`].
     pub cursor_visible: Arc<AtomicBool>,
     pub nc_button_pressed: Cell<Option<u32>>,
+    /// Pinned screen anchor and accumulated window position during a relative drag.
+    pub relative_pointer: Cell<Option<RelativePointer>>,
 
     pub display: Cell<WindowsDisplay>,
     /// Flag to instruct the `VSyncProvider` thread to invalidate the directx devices
@@ -93,7 +103,7 @@ pub struct WindowsWindowState {
 }
 
 pub(crate) struct WindowsWindowInner {
-    hwnd: HWND,
+    pub(crate) hwnd: HWND,
     drop_target_helper: IDropTargetHelper,
     pub(crate) state: WindowsWindowState,
     system_settings: WindowsSystemSettings,
@@ -216,6 +226,7 @@ impl WindowsWindowState {
             current_cursor: Cell::new(current_cursor),
             cursor_visible,
             nc_button_pressed: Cell::new(nc_button_pressed),
+            relative_pointer: Cell::new(None),
             display: Cell::new(display),
             fullscreen: Cell::new(fullscreen),
             initial_placement: Cell::new(initial_placement),
@@ -944,6 +955,29 @@ impl PlatformWindow for WindowsWindow {
 
     fn is_subpixel_rendering_supported(&self) -> bool {
         true
+    }
+
+    fn begin_relative_pointer(&self) -> bool {
+        if self.state.relative_pointer.get().is_some() {
+            return true;
+        }
+        let mut anchor = POINT::default();
+        if unsafe { GetCursorPos(&mut anchor) }.is_err() {
+            return false;
+        }
+        let mut client = anchor;
+        if !unsafe { ScreenToClient(self.0.hwnd, &mut client) }.as_bool() {
+            return false;
+        }
+        let position = logical_point(client.x as f32, client.y as f32, self.state.scale_factor.get());
+        self.state.relative_pointer.set(Some(RelativePointer { anchor, position }));
+        self.state.cursor_visible.store(false, std::sync::atomic::Ordering::Relaxed);
+        unsafe { SetCursor(None) };
+        true
+    }
+
+    fn end_relative_pointer(&self, position: Option<Point<Pixels>>) {
+        self.0.end_relative_pointer(position);
     }
 
     fn set_title(&mut self, title: &str) {

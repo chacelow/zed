@@ -669,9 +669,41 @@ struct MacWindowState {
     accesskit_adapter: Option<accesskit_macos::SubclassingAdapter>,
     // The parent window if this window is a sheet (Dialog kind)
     sheet_parent: Option<id>,
+    // Accumulated window-space position while the cursor is pinned for a relative drag.
+    relative_pointer: Option<Point<Pixels>>,
 }
 
 impl MacWindowState {
+    fn end_relative_pointer(&mut self, position: Option<Point<Pixels>>) {
+        if self.relative_pointer.take().is_none() {
+            return;
+        }
+        core_graphics::display::CGDisplay::associate_mouse_and_mouse_cursor_position(true).log_err();
+        if let Some(position) = position {
+            let height = self.content_size().height;
+            let window_point = NSPoint::new(
+                f64::from(f32::from(position.x)),
+                f64::from(f32::from(height - position.y)),
+            );
+            let screen = unsafe {
+                NSWindow::convertRectToScreen_(
+                    self.native_window,
+                    NSRect::new(window_point, NSSize::new(0., 0.)),
+                )
+            }
+            .origin;
+            let primary_height = unsafe {
+                let screens = NSScreen::screens(nil);
+                NSScreen::frame(cocoa::foundation::NSArray::objectAtIndex(screens, 0)).size.height
+            };
+            let target = core_graphics::display::CGPoint::new(screen.x, primary_height - screen.y);
+            core_graphics::display::CGDisplay::warp_mouse_cursor_position(target).log_err();
+        }
+        unsafe {
+            let _: () = msg_send![class!(NSCursor), unhide];
+        }
+    }
+
     fn move_traffic_light(&mut self) {
         if let Some(traffic_light_position) = self.traffic_light_position {
             if self.is_fullscreen() {
@@ -1113,6 +1145,7 @@ impl MacWindow {
                 closed: Arc::new(AtomicBool::new(false)),
                 accesskit_adapter: None,
                 sheet_parent: None,
+                relative_pointer: None,
             })));
 
             (*native_window).set_ivar(
@@ -1675,6 +1708,29 @@ impl PlatformWindow for MacWindow {
     // is_hovered is unused on macOS. See Window::is_window_hovered.
     fn is_hovered(&self) -> bool {
         false
+    }
+
+    fn begin_relative_pointer(&self) -> bool {
+        let mut lock = self.0.lock();
+        if lock.relative_pointer.is_some() {
+            return true;
+        }
+        let position = unsafe { lock.native_window.mouseLocationOutsideOfEventStream() };
+        let origin = convert_mouse_position(position, lock.content_size().height);
+        if core_graphics::display::CGDisplay::associate_mouse_and_mouse_cursor_position(false)
+            .is_err()
+        {
+            return false;
+        }
+        unsafe {
+            let _: () = msg_send![class!(NSCursor), hide];
+        }
+        lock.relative_pointer = Some(origin);
+        true
+    }
+
+    fn end_relative_pointer(&self, position: Option<Point<Pixels>>) {
+        self.0.lock().end_relative_pointer(position);
     }
 
     fn set_title(&mut self, title: &str) {
@@ -2616,7 +2672,20 @@ extern "C" fn handle_view_event(this: &Object, _: Sel, native_event: id) {
         }
         _ => {}
     }
-    let event = unsafe { platform_input_from_native(native_event, Some(window_height)) };
+    let mut event = unsafe { platform_input_from_native(native_event, Some(window_height)) };
+    if let Some(relative) = lock.relative_pointer.as_mut() {
+        // The cursor is pinned, so the absolute location is frozen: advance a
+        // virtual position by the event's relative motion instead.
+        match event.as_mut() {
+            Some(PlatformInput::MouseMove(moved)) => {
+                relative.x += px(unsafe { native_event.deltaX() } as f32);
+                relative.y += px(unsafe { native_event.deltaY() } as f32);
+                moved.position = *relative;
+            }
+            Some(PlatformInput::MouseUp(up)) => up.position = *relative,
+            _ => {}
+        }
+    }
 
     if let Some(mut event) = event {
         // AppKit unhides the cursor on the next mouse movement; mirror that here.
@@ -2863,11 +2932,16 @@ extern "C" fn window_did_change_screen(this: &Object, _: Sel, _: id) {
 
 extern "C" fn window_did_change_key_status(this: &Object, selector: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
-    let lock = window_state.lock();
+    let mut lock = window_state.lock();
     let is_active = unsafe { lock.native_window.isKeyWindow() == YES };
 
     // AppKit also unhides the cursor on activation changes, so mirror that here.
     lock.cursor_visible.store(true, Ordering::Relaxed);
+
+    // Losing key status ends a relative drag; never leave the cursor pinned.
+    if selector == sel!(windowDidResignKey:) {
+        lock.end_relative_pointer(None);
+    }
 
     // When opening a pop-up while the application isn't active, Cocoa sends a spurious
     // `windowDidBecomeKey` message to the previous key window even though that window

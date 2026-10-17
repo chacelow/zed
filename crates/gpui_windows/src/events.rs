@@ -370,9 +370,55 @@ impl WindowsWindowInner {
         Some(0)
     }
 
+    pub(crate) fn end_relative_pointer(&self, position: Option<Point<Pixels>>) {
+        let Some(relative) = self.state.relative_pointer.take() else {
+            return;
+        };
+        let target = match position {
+            Some(position) => {
+                let scale = self.state.scale_factor.get();
+                let mut point = POINT {
+                    x: (f32::from(position.x) * scale).round() as i32,
+                    y: (f32::from(position.y) * scale).round() as i32,
+                };
+                if unsafe { ClientToScreen(self.hwnd, &mut point) }.as_bool() {
+                    point
+                } else {
+                    relative.anchor
+                }
+            }
+            None => relative.anchor,
+        };
+        unsafe { SetCursorPos(target.x, target.y) }.log_err();
+        self.state.cursor_visible.store(true, Ordering::Relaxed);
+        unsafe { SetCursor(self.state.current_cursor.get()) };
+    }
+
+    /// While relative, the cursor is held at its anchor: each move contributes
+    /// its offset from the anchor and is then warped back, as Live does.
+    fn relative_position(&self, x: f32, y: f32) -> Option<Point<Pixels>> {
+        let mut relative = self.state.relative_pointer.get()?;
+        let mut screen = POINT { x: x as i32, y: y as i32 };
+        if !unsafe { ClientToScreen(self.hwnd, &mut screen) }.as_bool() {
+            return Some(relative.position);
+        }
+        let dx = screen.x - relative.anchor.x;
+        let dy = screen.y - relative.anchor.y;
+        if dx != 0 || dy != 0 {
+            let scale = self.state.scale_factor.get();
+            relative.position.x += px(dx as f32 / scale);
+            relative.position.y += px(dy as f32 / scale);
+            self.state.relative_pointer.set(Some(relative));
+            unsafe { SetCursorPos(relative.anchor.x, relative.anchor.y) }.log_err();
+        }
+        Some(relative.position)
+    }
+
     fn handle_mouse_move_msg(&self, handle: HWND, lparam: LPARAM, wparam: WPARAM) -> Option<isize> {
         self.start_tracking_mouse(handle, TME_LEAVE);
-        self.restore_cursor_after_hide();
+        if self.state.relative_pointer.get().is_none() {
+            self.restore_cursor_after_hide();
+        }
 
         let Some(mut func) = self.state.callbacks.input.take() else {
             return Some(1);
@@ -394,7 +440,9 @@ impl WindowsWindowInner {
         let x = lparam.signed_loword() as f32;
         let y = lparam.signed_hiword() as f32;
         let input = PlatformInput::MouseMove(MouseMoveEvent {
-            position: logical_point(x, y, scale_factor),
+            position: self
+                .relative_position(x, y)
+                .unwrap_or_else(|| logical_point(x, y, scale_factor)),
             pressed_button,
             modifiers: current_modifiers(),
         });
@@ -536,7 +584,12 @@ impl WindowsWindowInner {
 
         let input = PlatformInput::MouseUp(MouseUpEvent {
             button,
-            position: logical_point(x, y, scale_factor),
+            position: self
+                .state
+                .relative_pointer
+                .get()
+                .map(|relative| relative.position)
+                .unwrap_or_else(|| logical_point(x, y, scale_factor)),
             modifiers: current_modifiers(),
             click_count,
         });
@@ -821,6 +874,7 @@ impl WindowsWindowInner {
         let this = self.clone();
 
         if !activated {
+            this.end_relative_pointer(None);
             this.state.cursor_visible.store(true, Ordering::Relaxed);
         }
 

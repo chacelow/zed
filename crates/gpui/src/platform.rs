@@ -850,6 +850,15 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn is_active(&self) -> bool;
     fn resume_generation(&self) -> u64 { 0 }
     fn is_hovered(&self) -> bool;
+    /// Hides the cursor and pins it where it is; later mouse events report
+    /// positions accumulated from relative motion, so a drag never stops at a
+    /// screen edge. Returns false when the platform cannot pin the cursor.
+    fn begin_relative_pointer(&self) -> bool {
+        false
+    }
+    /// Ends relative pointer mode, moves the cursor to `position` in window
+    /// coordinates when given, and shows it again.
+    fn end_relative_pointer(&self, _position: Option<Point<Pixels>>) {}
     fn background_appearance(&self) -> WindowBackgroundAppearance;
     fn set_title(&mut self, title: &str);
     fn set_background_appearance(&self, background_appearance: WindowBackgroundAppearance);

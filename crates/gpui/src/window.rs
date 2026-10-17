@@ -2943,6 +2943,18 @@ impl Window {
         self.captured_identity = None;
     }
 
+    /// Hides and pins the cursor; mouse events then report positions built
+    /// from relative motion. See [`PlatformWindow::begin_relative_pointer`].
+    pub fn begin_relative_pointer(&self) -> bool {
+        self.platform_window.begin_relative_pointer()
+    }
+
+    /// Leaves relative pointer mode, optionally warping the cursor to a point
+    /// in window coordinates, and shows the cursor.
+    pub fn end_relative_pointer(&self, position: Option<Point<Pixels>>) {
+        self.platform_window.end_relative_pointer(position);
+    }
+
     /// Returns the hitbox that has captured the pointer, if any.
     pub fn captured_hitbox(&self) -> Option<HitboxId> {
         self.captured_hitbox
