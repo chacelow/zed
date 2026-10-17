@@ -48,6 +48,7 @@ pub(crate) struct DirectXRenderer {
 
     width: u32,
     height: u32,
+    successful_present_count: u64,
 
     /// Whether we want to skip drwaing due to device lost events.
     ///
@@ -193,12 +194,17 @@ impl DirectXRenderer {
             font_info: Self::get_font_info(),
             width: 1,
             height: 1,
+            successful_present_count: 0,
             skip_draws: false,
         })
     }
 
     pub(crate) fn sprite_atlas(&self) -> Arc<dyn PlatformAtlas> {
         self.atlas.clone()
+    }
+
+    pub(crate) fn successful_present_count(&self) -> u64 {
+        self.successful_present_count
     }
 
     fn pre_draw(&self, clear_color: &[f32; 4]) -> Result<()> {
@@ -250,7 +256,9 @@ impl DirectXRenderer {
                 .swap_chain
                 .Present(0, DXGI_PRESENT(0))
         };
-        result.ok().context("Presenting swap chain failed")
+        result.ok().context("Presenting swap chain failed")?;
+        self.successful_present_count += 1;
+        Ok(())
     }
 
     pub(crate) fn handle_device_lost(&mut self, directx_devices: &DirectXDevices) -> Result<()> {

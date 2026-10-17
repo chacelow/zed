@@ -1061,6 +1061,10 @@ impl PlatformWindow for WindowsWindow {
             .log_err();
     }
 
+    fn successful_present_count(&self) -> Option<u64> {
+        Some(self.state.renderer.borrow().successful_present_count())
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     fn render_to_image(&self, scene: &Scene) -> anyhow::Result<image::RgbaImage> {
         self.state

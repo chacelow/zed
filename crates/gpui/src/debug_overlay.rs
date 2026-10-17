@@ -25,6 +25,7 @@ pub struct DebugFrameOverlayStats {
     pub p99_ms: Option<f32>,
     pub max_ms: Option<f32>,
     pub frames: u64,
+    pub successful_presents: Option<u64>,
     pub samples: usize,
 }
 
@@ -115,6 +116,7 @@ impl DebugFrameOverlay {
             p99_ms: percentile(99).map(duration_ms),
             max_ms: sorted.last().copied().map(duration_ms),
             frames: self.total_frame_count,
+            successful_presents: None,
             samples: self.draw_durations.len(),
         }
     }

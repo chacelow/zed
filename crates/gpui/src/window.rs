@@ -3214,7 +3214,9 @@ impl Window {
     #[cfg(feature = "profiler")]
     #[allow(missing_docs)]
     pub fn debug_frame_overlay_stats(&self) -> crate::DebugFrameOverlayStats {
-        self.debug_frame_overlay.stats()
+        let mut stats = self.debug_frame_overlay.stats();
+        stats.successful_presents = self.platform_window.successful_present_count();
+        stats
     }
 
     fn draw_roots(&mut self, cx: &mut App) {
