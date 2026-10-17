@@ -2458,6 +2458,12 @@ impl Window {
         self.invalidator.wake_platform();
     }
 
+    /// Whether a draw is pending: some view or the window was invalidated since the last frame.
+    /// While false, everything recorded during the last paint still describes the screen.
+    pub fn is_dirty(&self) -> bool {
+        self.invalidator.is_dirty()
+    }
+
     /// Schedule a frame to be drawn on the next animation frame.
     ///
     /// This is useful for elements that need to animate continuously, such as a video player or an animated GIF.
