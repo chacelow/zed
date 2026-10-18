@@ -394,10 +394,17 @@ impl WindowsWindowInner {
         unsafe { SetCursor(self.state.current_cursor.get()) };
     }
 
-    fn relative_position(&self, x: f32, y: f32) -> Option<(Point<Pixels>, Point<Pixels>)> {
+    /// While relative, the cursor is held at its anchor: each move reports the cursor's offset from
+    /// the anchor, then warps it back, as Live does.
+    ///
+    /// The offset comes from the live cursor (`GetCursorPos`), not the message coordinates. Moves
+    /// queued before the anchor was set still carry the old cursor position and would read as a
+    /// jump of the full distance to the anchor; moves queued between a warp and its WM_MOUSEMOVE
+    /// carry stale coordinates and would count the same motion twice.
+    fn relative_position(&self) -> Option<(Point<Pixels>, Point<Pixels>)> {
         let relative = self.state.relative_pointer.get()?;
-        let mut screen = POINT { x: x as i32, y: y as i32 };
-        if !unsafe { ClientToScreen(self.hwnd, &mut screen) }.as_bool() {
+        let mut screen = POINT::default();
+        if unsafe { GetCursorPos(&mut screen) }.is_err() {
             return Some((relative.anchor_position, point(px(0.), px(0.))));
         }
         let scale = self.state.scale_factor.get();
@@ -437,7 +444,7 @@ impl WindowsWindowInner {
         let x = lparam.signed_loword() as f32;
         let y = lparam.signed_hiword() as f32;
         let (position, delta) = self
-            .relative_position(x, y)
+            .relative_position()
             .unwrap_or_else(|| (logical_point(x, y, scale_factor), point(px(0.), px(0.))));
         let input = PlatformInput::MouseMove(MouseMoveEvent {
             position,
