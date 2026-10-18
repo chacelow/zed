@@ -53,6 +53,11 @@ impl DrawCoordinator {
         }
     }
 
+    /// Whether a window on this thread is inside `draw_window`.
+    pub(crate) fn is_drawing(&self) -> bool {
+        self.drawing.get()
+    }
+
     fn try_begin_draw(&self) -> Option<DrawWindowGuard<'_>> {
         // This only covers the `draw_window` span (which extends past the GPUI
         // draw, through presentation and IME updates). Requests that arrive

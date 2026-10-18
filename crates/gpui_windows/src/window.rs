@@ -1045,6 +1045,25 @@ impl PlatformWindow for WindowsWindow {
         self.state.callbacks.request_frame.set(Some(callback));
     }
 
+    /// Draws the frame as soon as the window becomes dirty instead of at the next vsync tick.
+    ///
+    /// Without it a change made outside a draw (a pointer move committed by JavaScript, say)
+    /// waits for the vsync thread's next `RedrawWindow`, on average half a refresh and up to a
+    /// whole one. A wake requested while a draw is running is left to the vsync thread, so
+    /// continuous animation still draws at most once per refresh.
+    fn frame_waker(&self) -> Option<Rc<dyn Fn()>> {
+        let hwnd = self.0.hwnd;
+        let draw_coordinator = self.state.draw_coordinator.clone();
+        Some(Rc::new(move || {
+            if draw_coordinator.is_drawing() {
+                return;
+            }
+            unsafe {
+                let _ = RedrawWindow(Some(hwnd), None, None, RDW_INVALIDATE);
+            }
+        }))
+    }
+
     fn on_input(&self, callback: Box<dyn FnMut(PlatformInput) -> DispatchEventResult>) {
         self.state.callbacks.input.set(Some(callback));
     }
